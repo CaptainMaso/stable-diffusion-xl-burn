@@ -53,8 +53,9 @@ pub fn load_diffuser<B: Backend>(
     device: &B::Device,
     is_refiner: bool,
 ) -> Result<Diffuser<B>, Box<dyn Error>> {
-    let n_steps = load_usize::<B>("n_steps", path, device)?;
-    let alpha_cumulative_products = Param::from_tensor(load_tensor::<B, 1>("alphas_cumprod", path, device)?);
+    let n_steps = load_i64::<B>("n_steps", path, device)?;
+    let alpha_cumulative_products =
+        Param::from_tensor(load_tensor::<B, 1>("alphas_cumprod", path, device)?);
     let name = if is_refiner {
         "diffuser_refiner"
     } else {
@@ -75,11 +76,10 @@ pub fn load_latent_decoder<B: Backend>(
     device: &B::Device,
 ) -> Result<LatentDecoder<B>, Box<dyn Error>> {
     let autoencoder = load_autoencoder(&format!("{}/{}", path, "autoencoder"), device)?;
-    let scale_factor = load_f32::<B>("scale_factor", path, device)?.into();
+    let scale_factor = load_scalar::<B>("scale_factor", path, device)?.into();
 
     Ok(LatentDecoder {
         autoencoder,
         scale_factor,
     })
 }
-

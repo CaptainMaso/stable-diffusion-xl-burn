@@ -1,10 +1,9 @@
-pub mod load;
+// #[cfg(feature = "load")]
+// pub mod load;
 
-use burn::{
-    config::Config,
-    module::{Module, Param},
-    tensor::{backend::Backend, Tensor},
-};
+use crate::prelude::*;
+
+use burn::module::Param;
 
 #[derive(Config)]
 pub struct GroupNormConfig {
@@ -50,6 +49,13 @@ pub struct GroupNorm<B: Backend> {
 }
 
 impl<B: Backend> GroupNorm<B> {
+    // #[cfg(feature = "load")]
+    // pub fn load(path: &Path, name: &str, device: &B::Device) -> Result<Self> {
+    //     let args = burn_import::pytorch::LoadArgs::new(path.to_path_buf()).with_top_level_key(name);
+    //     let record = burn_import::pytorch::PyTorchFileRecorder::new().load(args, device)?;
+    //     Ok(Self::load_record(Self::default(), record))
+    // }
+
     pub fn forward<const D: usize>(&self, x: Tensor<B, D>) -> Tensor<B, D> {
         let shape = x.shape();
         let n_batch = shape.dims[0];

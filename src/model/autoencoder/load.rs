@@ -76,8 +76,8 @@ fn load_padded_conv2d<B: Backend>(
     let channels = load_tensor::<B, 1>("channels", path, device)?;
     let channels = tensor_to_array_2(channels);
 
-    let kernel_size = load_usize::<B>("kernel_size", path, device)?;
-    let stride = load_usize::<B>("stride", path, device)?;
+    let kernel_size = load_i64::<B>("kernel_size", path, device)?;
+    let stride = load_i64::<B>("stride", path, device)?;
 
     let padding = load_tensor::<B, 1>("padding", path, device)?;
     let padding: [usize; 4] = tensor_to_array(padding);
@@ -136,7 +136,7 @@ pub fn load_decoder<B: Backend>(
     let conv_in = load_conv2d(&format!("{}/{}", path, "conv_in"), device)?;
     let mid = load_mid(&format!("{}/{}", path, "mid"), device)?;
 
-    let n_block = load_usize::<B>("n_block", path, device)?;
+    let n_block = load_i64::<B>("n_block", path, device)?;
     let blocks = (0..n_block)
         .into_iter()
         .map(|i| load_decoder_block::<B>(&format!("{}/blocks/{}", path, i), device))
@@ -163,7 +163,7 @@ pub fn load_encoder<B: Backend>(
     let conv_in = load_conv2d(&format!("{}/{}", path, "conv_in"), device)?;
     let mid = load_mid(&format!("{}/{}", path, "mid"), device)?;
 
-    let n_block = load_usize::<B>("n_block", path, device)?;
+    let n_block = load_i64::<B>("n_block", path, device)?;
     let blocks = (0..n_block)
         .into_iter()
         .map(|i| load_encoder_block::<B>(&format!("{}/blocks/{}", path, i), device))

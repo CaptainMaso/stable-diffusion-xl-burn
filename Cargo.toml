@@ -2,19 +2,66 @@
 name = "stablediffusion"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["wgpu-backend"]
+
+load = ["burn-import"]
+
+wgpu-backend = ["burn-wgpu", "_any_backend"]
+torch-backend = ["burn-tch", "tch", "_any_backend"]
+
+_any_backend = []
 
 [dependencies]
-burn = "0.13.0"
-burn-tch = "0.13.0"
-burn-autodiff = "0.13.0"
-tch = "0.15.0"
-serde = {version = "1.0.171", features = ["std", "derive"]}
-npy = "0.4.0"
-num-traits = "0.2.15"
-rust_tokenizers = "8.1.0"
-regex = "1.9.1"
-image = "0.24.6"
-cfg-if = "0.1"
-structopt = "0.3.26"
+serde = {version = "1.0", features = ["std", "derive"]}
+ndarray-npy = "0.8"
+num-traits = "0.2"
+rust_tokenizers = "8.1"
+regex = "1.10"
+image = "0.25"
+cfg-if = "1.0"
+clap = { version = "4.5.4", features = ["derive"] }
+
+burn = { git = "https://github.com/CaptainMaso/burn.git" }
+
+burn-ndarray = { package = "burn-ndarray", git = "https://github.com/CaptainMaso/burn.git" }
+burn-autodiff = { package = "burn-autodiff", git = "https://github.com/CaptainMaso/burn.git" }
+burn-fusion = { package = "burn-fusion", git = "https://github.com/CaptainMaso/burn.git" }
+burn-import = { package = "burn-import", git = "https://github.com/CaptainMaso/burn.git", optional = true }
+
+tch = { version = "0.15.0", optional = true}
+anyhow = "1.0.83"
+ndarray = "0.15.6"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "time"] }
+
+[dependencies.burn-wgpu]
+package = "burn-wgpu"
+git = "https://github.com/CaptainMaso/burn.git"
+optional = true
+
+[dependencies.burn-tch]
+package = "burn-tch"
+git = "https://github.com/CaptainMaso/burn.git"
+optional = true
+
+[[bin]]
+name = "convert"
+test = false
+bench = false
+required-features = ["torch-backend"]
+
+[[bin]]
+name = "sample"
+test = false
+bench = false
+required-features = ["_any_backend"]
+
+[[bin]]
+name = "test"
+test = false
+bench = false
+required-features = ["_any_backend"]

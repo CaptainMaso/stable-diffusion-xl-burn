@@ -2,6 +2,7 @@ use std::env;
 use std::error::Error;
 use std::process;
 
+use burn_wgpu::GraphicsApi;
 use stablediffusion::model::autoencoder::{load::load_decoder, Decoder, DecoderConfig};
 use stablediffusion::model::autoencoder::{load::load_encoder, Encoder, EncoderConfig};
 use stablediffusion::model::clip::{load::load_clip_text_transformer, CLIPConfig, CLIP};
@@ -24,14 +25,20 @@ use burn_tch::{LibTorch, LibTorchDevice};
 
 use burn::record::{self, BinFileRecorder, HalfPrecisionSettings, Recorder};
 
-fn load_embedder_model<B: Backend>(model_name: &str, device: &B::Device) -> Result<Embedder<B>, Box<dyn Error>> {
+fn load_embedder_model<B: Backend>(
+    model_name: &str,
+    device: &B::Device,
+) -> Result<Embedder<B>, Box<dyn Error>> {
     let config = EmbedderConfig::load(&format!("{}.cfg", model_name))?;
     let record = BinFileRecorder::<HalfPrecisionSettings>::new().load(model_name.into(), device)?;
 
     Ok(config.init(device).load_record(record))
 }
 
-fn load_diffuser_model<B: Backend>(model_name: &str, device: &B::Device) -> Result<Diffuser<B>, Box<dyn Error>> {
+fn load_diffuser_model<B: Backend>(
+    model_name: &str,
+    device: &B::Device,
+) -> Result<Diffuser<B>, Box<dyn Error>> {
     let config = DiffuserConfig::load(&format!("{}.cfg", model_name))?;
     let record = BinFileRecorder::<HalfPrecisionSettings>::new().load(model_name.into(), device)?;
 
@@ -40,7 +47,7 @@ fn load_diffuser_model<B: Backend>(model_name: &str, device: &B::Device) -> Resu
 
 fn load_latent_decoder_model<B: Backend>(
     model_name: &str,
-    device: &B::Device
+    device: &B::Device,
 ) -> Result<LatentDecoder<B>, Box<dyn Error>> {
     let config = LatentDecoderConfig::load(&format!("{}.cfg", model_name))?;
     let record = BinFileRecorder::<HalfPrecisionSettings>::new().load(model_name.into(), device)?;
@@ -50,7 +57,10 @@ fn load_latent_decoder_model<B: Backend>(
 
 fn arb_tensor<B: Backend, const D: usize>(dims: [usize; D], device: &B::Device) -> Tensor<B, D> {
     let prod: usize = dims.iter().cloned().product();
-    Tensor::arange(0..prod as i64, device).float().sin().reshape(dims)
+    Tensor::arange(0..prod as i64, device)
+        .float()
+        .sin()
+        .reshape(dims)
 }
 
 use stablediffusion::token::{clip::ClipTokenizer, open_clip::OpenClipTokenizer, Tokenizer};
@@ -161,21 +171,30 @@ fn test_tiny_decoder<B: Backend>(device: &B::Device) {
     println!("Output: {:?}", output.into_data());
 }
 
-use burn::tensor::ElementConversion;
+use burn::tensor::{f16, ElementConversion};
 use num_traits::cast::ToPrimitive;
 use stablediffusion::model::stablediffusion::Conditioning;
 
-use stablediffusion::backend_converter::*;
+use stablediffusion::with_backend::*;
 
 fn main() {
     //type Backend = NdArrayBackend<f32>;
     //let device = NdArrayDevice::Cpu;
 
-    type Backend = LibTorch<f32>;
-    type Backend_f16 = LibTorch<tensor::f16>;
+    //type Backend = LibTorch<f32>;
+    // type Backend_f16 = LibTorch<tensor::f16>;
 
-    let cpu_device = LibTorchDevice::Cpu;
-    let device = /*TchDevice::Cpu;*/ LibTorchDevice::Cuda(0);
+    // let cpu_device = LibTorchDevice::Cpu;
+    // let device = /*TchDevice::Cpu;*/ LibTorchDevice::Cuda(0);
+
+    type Backend = burn_wgpu::Wgpu;
+    type Backend_f16 = burn_fusion::Fusion<
+        burn_wgpu::JitBackend<burn_wgpu::WgpuRuntime<burn_wgpu::AutoGraphicsApi>, f32, i32>,
+    >;
+
+    let device = burn_wgpu::WgpuDevice::BestAvailable;
+
+    burn_wgpu::init_sync::<burn_wgpu::WebGpu>(&device, burn_wgpu::RuntimeOptions::default());
 
     //test_clip::<Backend>(&device);
     //test_tiny_open_clip::<Backend>(&device);
@@ -198,8 +217,7 @@ fn main() {
         embedder.text_to_conditioning(text, size, crop, ar)
     };
 
-    let conditioning: Conditioning<Backend_f16> =
-        conditioning.convert(DefaultBackendConverter::new(), &device);
+    let conditioning: Conditioning<Backend_f16> = conditioning.with_backend(&device);
 
     let latent = {
         println!("Loading diffuser...");
@@ -212,8 +230,6 @@ fn main() {
         println!("Running diffuser...");
         diffuser.sample_latent(conditioning, unconditional_guidance_scale, n_steps)
     };
-
-    let latent: Tensor<Backend, 4> = DefaultBackendConverter::new().convert(latent, &device);
 
     let images = {
         println!("Loading latent decoder...");

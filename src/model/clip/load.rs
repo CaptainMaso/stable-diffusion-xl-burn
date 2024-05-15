@@ -39,7 +39,7 @@ pub fn load_multi_head_self_attention<B: Backend>(
     path: &str,
     device: &B::Device,
 ) -> Result<MultiHeadSelfAttention<B>, Box<dyn Error>> {
-    let n_head = load_usize::<B>("n_head", path, device)?;
+    let n_head = load_i64::<B>("n_head", path, device)?;
     let query = load_linear(&format!("{}/{}", path, "query"), device)?;
     let key = load_linear(&format!("{}/{}", path, "key"), device)?;
     let value = load_linear(&format!("{}/{}", path, "value"), device)?;
@@ -82,10 +82,13 @@ pub fn load_clip_text_transformer<B: Backend>(
     is_open_clip: bool,
 ) -> Result<CLIP<B>, Box<dyn Error>> {
     let token_embedding = load_embedding(&format!("{}/{}", path, "token_embedding"), device)?;
-    let position_embedding =
-        Param::from_tensor(load_tensor("weight", &format!("{}/position_embedding", path), device)?);
+    let position_embedding = Param::from_tensor(load_tensor(
+        "weight",
+        &format!("{}/position_embedding", path),
+        device,
+    )?);
 
-    let n_layer = load_usize::<B>("n_layer", path, device)?;
+    let n_layer = load_i64::<B>("n_layer", path, device)?;
     let blocks = (0..n_layer)
         .into_iter()
         .map(|i| {

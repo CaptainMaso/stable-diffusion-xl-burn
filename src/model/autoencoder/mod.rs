@@ -1,26 +1,15 @@
-pub mod load;
+// #[cfg(feature = "load")]
+// pub mod load;
 
-use burn::{
-    config::Config,
-    module::{Module, Param},
-    nn::{
-        self,
-        conv::{Conv2d, Conv2dConfig, Conv2dRecord},
-        PaddingConfig2d,
-    },
-    tensor::{
-        activation::{sigmoid, softmax},
-        backend::Backend,
-        module::embedding,
-        Distribution, Int, Tensor,
-    },
+use crate::{backend::QKVBackend, prelude::*};
+
+use burn::nn::{
+    conv::{Conv2d, Conv2dConfig},
+    PaddingConfig2d,
 };
 
 use super::groupnorm::*;
 use super::silu::*;
-use crate::backend::Backend as MyBackend;
-
-use std::iter;
 
 #[derive(Config)]
 pub struct AutoencoderConfig {}
@@ -28,9 +17,10 @@ pub struct AutoencoderConfig {}
 impl AutoencoderConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> Autoencoder<B> {
         let encoder =
-            EncoderConfig::new(vec![(128, 128), (128, 256), (256, 512), (512, 512)], 32, 8).init(device);
-        let decoder =
-            DecoderConfig::new(vec![(512, 512), (512, 512), (512, 256), (256, 128)], 32).init(device);
+            EncoderConfig::new(vec![(128, 128), (128, 256), (256, 512), (512, 512)], 32, 8)
+                .init(device);
+        let decoder = DecoderConfig::new(vec![(512, 512), (512, 512), (512, 256), (256, 128)], 32)
+            .init(device);
         let quant_conv = Conv2dConfig::new([8, 8], [1, 1]).init(device);
         let post_quant_conv = Conv2dConfig::new([4, 4], [1, 1]).init(device);
 
@@ -51,7 +41,7 @@ pub struct Autoencoder<B: Backend> {
     post_quant_conv: Conv2d<B>,
 }
 
-impl<B: MyBackend> Autoencoder<B> {
+impl<B: QKVBackend> Autoencoder<B> {
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         self.decode_latent(self.encode_image(x))
     }
@@ -128,7 +118,7 @@ pub struct Encoder<B: Backend> {
     conv_out: Conv2d<B>,
 }
 
-impl<B: MyBackend> Encoder<B> {
+impl<B: QKVBackend> Encoder<B> {
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let x = self.conv_in.forward(x);
 
@@ -200,7 +190,7 @@ pub struct Decoder<B: Backend> {
     conv_out: Conv2d<B>,
 }
 
-impl<B: MyBackend> Decoder<B> {
+impl<B: QKVBackend> Decoder<B> {
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let x = self.conv_in.forward(x);
         let x = self.mid.forward(x);
@@ -252,7 +242,7 @@ pub struct EncoderBlock<B: Backend> {
     downsampler: Option<PaddedConv2d<B>>,
 }
 
-impl<B: MyBackend> EncoderBlock<B> {
+impl<B: Backend> EncoderBlock<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let x = self.res1.forward(x);
         let x = self.res2.forward(x);
@@ -303,7 +293,7 @@ pub struct DecoderBlock<B: Backend> {
     upsampler: Option<Conv2d<B>>,
 }
 
-impl<B: MyBackend> DecoderBlock<B> {
+impl<B: QKVBackend> DecoderBlock<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let x = self.res1.forward(x);
         let x = self.res2.forward(x);
@@ -440,7 +430,7 @@ pub struct Mid<B: Backend> {
     block_2: ResnetBlock<B>,
 }
 
-impl<B: MyBackend> Mid<B> {
+impl<B: QKVBackend> Mid<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let x = self.block_1.forward(x);
         let x = self.attn.forward(x);
@@ -497,7 +487,7 @@ pub struct ResnetBlock<B: Backend> {
     nin_shortcut: Option<Conv2d<B>>,
 }
 
-impl<B: MyBackend> ResnetBlock<B> {
+impl<B: Backend> ResnetBlock<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let h = self
             .conv1
@@ -547,7 +537,7 @@ pub struct ConvSelfAttentionBlock<B: Backend> {
     proj_out: Conv2d<B>,
 }
 
-impl<B: MyBackend> ConvSelfAttentionBlock<B> {
+impl<B: QKVBackend> ConvSelfAttentionBlock<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let [n_batch, n_channel, height, width] = x.dims();
 

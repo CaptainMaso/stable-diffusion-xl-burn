@@ -1,19 +1,24 @@
-pub mod load;
+// #[cfg(feature = "load")]
+// pub mod load;
 
+use crate::prelude::*;
+
+use burn::tensor::ElementConversion;
 use burn::{
     config::Config,
     module::{Module, Param},
     tensor::{backend::Backend, BasicOps, Data, Distribution, Float, Int, Tensor},
 };
-use burn::prelude::*;
-use burn::tensor::ElementConversion;
+
+use crate::with_backend::WithBackend;
 
 use num_traits::ToPrimitive;
 
 use super::autoencoder::{Autoencoder, AutoencoderConfig};
 use super::clip::{CLIPConfig, CLIP};
 use super::unet::{conditioning_embedding, UNet, UNetConfig};
-use crate::backend::Backend as MyBackend;
+use crate::backend::QKVBackend;
+
 use crate::token::{clip::ClipTokenizer, open_clip::OpenClipTokenizer, Tokenizer};
 
 /*#[derive(Config)]
@@ -196,7 +201,7 @@ pub struct LatentDecoder<B: Backend> {
     scale_factor: f64,
 }
 
-impl<B: MyBackend> LatentDecoder<B> {
+impl<B: QKVBackend> LatentDecoder<B> {
     pub fn latent_to_image(&self, latent: Tensor<B, 4>) -> RawImages {
         let [n_batch, _, latent_height, latent_width] = latent.dims();
         let image = self.decode_latent(latent);
@@ -240,7 +245,12 @@ impl<B: MyBackend> LatentDecoder<B> {
         let n_images = images.buffer.len();
         let n_channel = 3;
 
-        let data = images.buffer.iter().map(|v| v.iter().map(|v| v.elem())).flatten().collect();
+        let data = images
+            .buffer
+            .iter()
+            .map(|v| v.iter().map(|v| v.elem()))
+            .flatten()
+            .collect();
         let shape = [n_images, images.height, images.width, n_channel];
 
         // transform elements to between -1 and 1 and change dims to [n_batch, n_channel, height, width]
@@ -281,7 +291,7 @@ impl DiffuserConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> Diffuser<B> {
         let n_steps = 1000;
         let alpha_cumulative_products = Param::from_tensor(Tensor::zeros([1], device)); //offset_cosine_schedule_cumprod::<B>(n_steps).into();
-                                                                   //let diffusion = UNetConfig::new(2816, 4, 4, 320, 64, 2048).init(device);
+                                                                                        //let diffusion = UNetConfig::new(2816, 4, 4, 320, 64, 2048).init(device);
         let diffusion = UNetConfig::new(
             self.adm_in_channels,
             4,
@@ -313,7 +323,14 @@ pub struct Diffuser<B: Backend> {
     is_refiner: bool,
 }
 
-impl<B: MyBackend> Diffuser<B> {
+impl<B: QKVBackend> Diffuser<B> {
+    // #[cfg(feature = "load")]
+    // pub fn load(path: &Path, name: &str, device: &B::Device) -> Result<Self> {
+    //     let args = burn_import::pytorch::LoadArgs::new(path.to_path_buf()).with_top_level_key(name);
+    //     let record = burn_import::pytorch::PyTorchFileRecorder::new().load(args, device)?;
+    //     Ok(Self::load_record(Self::default(), record))
+    // }
+
     pub fn sample_latent(
         &self,
         conditioning: Conditioning<B>,
@@ -336,8 +353,8 @@ impl<B: MyBackend> Diffuser<B> {
         conditioning: Conditioning<B>,
         unconditional_guidance_scale: f64,
         n_steps: usize,
-        reference: Tensor<B, 4>, 
-        mask: Tensor<B, 4, Bool>, 
+        reference: Tensor<B, 4>,
+        mask: Tensor<B, 4, Bool>,
     ) -> Tensor<B, 4> {
         let latent = Self::gen_noise(&conditioning);
 
@@ -347,8 +364,8 @@ impl<B: MyBackend> Diffuser<B> {
             0,
             n_steps,
             unconditional_guidance_scale,
-            reference, 
-            mask, 
+            reference,
+            mask,
         )
     }
 
@@ -383,7 +400,7 @@ impl<B: MyBackend> Diffuser<B> {
         Tensor::random(
             [n_batches, 4, height / 8, width / 8],
             Distribution::Normal(0.0, 1.0),
-            &device
+            &device,
         )
     }
 
@@ -438,8 +455,8 @@ impl<B: MyBackend> Diffuser<B> {
         step_start: usize,
         n_steps: usize,
         unconditional_guidance_scale: f64,
-        reference: Tensor<B, 4>, 
-        mask: Tensor<B, 4, Bool>, 
+        reference: Tensor<B, 4>,
+        mask: Tensor<B, 4, Bool>,
     ) -> Tensor<B, 4> {
         let device = latent.device();
 
@@ -541,7 +558,7 @@ impl<B: MyBackend> Diffuser<B> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Module)]
 pub struct Conditioning<B: Backend> {
     pub unconditional_context_full: Tensor<B, 2>,
     pub unconditional_context_open_clip: Tensor<B, 2>,
@@ -554,27 +571,43 @@ pub struct Conditioning<B: Backend> {
     pub resolution: [usize; 2], // (height, width)
 }
 
-use crate::backend_converter::BackendConverter;
-
 impl<B: Backend> Conditioning<B> {
-    pub fn convert<B2: Backend, BC: BackendConverter<B2>>(
-        self,
-        converter: BC,
-        device: &B2::Device,
-    ) -> Conditioning<B2> {
+    pub fn with_backend<B2: Backend>(self, device: &B2::Device) -> Conditioning<B2> {
+        let Self {
+            unconditional_context_full,
+            unconditional_context_open_clip,
+            context_full,
+            context_open_clip,
+            unconditional_channel_context,
+            unconditional_channel_context_refiner,
+            channel_context,
+            channel_context_refiner,
+            resolution,
+        } = self;
+
+        let unconditional_context_full = unconditional_context_full.with_backend(device);
+
+        let unconditional_context_open_clip = unconditional_context_open_clip.with_backend(device);
+
+        let context_full = context_full.with_backend(device);
+
+        let context_open_clip = context_open_clip.with_backend(device);
+        let unconditional_channel_context = unconditional_channel_context.with_backend(device);
+        let unconditional_channel_context_refiner =
+            unconditional_channel_context_refiner.with_backend(device);
+        let channel_context = channel_context.with_backend(device);
+        let channel_context_refiner = channel_context_refiner.with_backend(device);
+
         Conditioning {
-            unconditional_context_full: converter.convert(self.unconditional_context_full, device),
-            unconditional_context_open_clip: converter
-                .convert(self.unconditional_context_open_clip, device),
-            context_full: converter.convert(self.context_full, device),
-            context_open_clip: converter.convert(self.context_open_clip, device),
-            unconditional_channel_context: converter
-                .convert(self.unconditional_channel_context, device),
-            unconditional_channel_context_refiner: converter
-                .convert(self.unconditional_channel_context_refiner, device),
-            channel_context: converter.convert(self.channel_context, device),
-            channel_context_refiner: converter.convert(self.channel_context_refiner, device),
-            resolution: self.resolution,
+            unconditional_context_full,
+            unconditional_context_open_clip,
+            context_full,
+            context_open_clip,
+            unconditional_channel_context,
+            unconditional_channel_context_refiner,
+            channel_context,
+            channel_context_refiner,
+            resolution,
         }
     }
 }
@@ -657,7 +690,7 @@ pub struct Embedder<B: Backend> {
     open_clip_tokenizer: OpenClipTokenizer,
 }
 
-impl<B: MyBackend> Embedder<B> {
+impl<B: QKVBackend> Embedder<B> {
     pub fn text_to_conditioning(
         &self,
         text: &str,
@@ -756,7 +789,7 @@ impl<B: MyBackend> Embedder<B> {
     }
 }
 
-pub fn text_to_context_clip<B: MyBackend, T: Tokenizer>(
+pub fn text_to_context_clip<B: QKVBackend, T: Tokenizer>(
     text: &str,
     clip: &CLIP<B>,
     tokenizer: &T,
@@ -769,7 +802,7 @@ pub fn text_to_context_clip<B: MyBackend, T: Tokenizer>(
     clip.forward_hidden(tokens, n_layers - 1) // penultimate layer
 }
 
-pub fn text_to_context_open_clip<B: MyBackend, T: Tokenizer>(
+pub fn text_to_context_open_clip<B: QKVBackend, T: Tokenizer>(
     text: &str,
     clip: &CLIP<B>,
     tokenizer: &T,
@@ -796,8 +829,7 @@ pub fn tokenize_text<B: Backend, T: Tokenizer>(
 
     tokenized.resize(seq_len, tokenizer.padding_token() as i32);
 
-    Tensor::from_ints(&tokenized[..], device)
-        .unsqueeze()
+    Tensor::from_ints(&tokenized[..], device).unsqueeze()
 }
 
 use std::f64::consts::PI;

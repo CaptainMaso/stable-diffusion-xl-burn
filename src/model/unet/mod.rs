@@ -1,22 +1,17 @@
-pub mod load;
+// #[cfg(feature = "load")]
+// pub mod load;
 
-use burn::{
-    config::Config,
-    module::{Module, Param},
-    nn::{
-        self,
-        conv::{Conv2d, Conv2dConfig},
-        PaddingConfig2d, Gelu,
-    },
-    tensor::{activation::softmax, module::embedding, Distribution, Int, Tensor},
-};
-
-use burn::tensor::backend::Backend;
+use crate::prelude::*;
 
 use super::groupnorm::*;
 use super::silu::*;
-use crate::backend::Backend as MyBackend;
+use crate::backend::QKVBackend as MyBackend;
 use crate::model::layernorm::{LayerNorm, LayerNormConfig};
+
+use burn::nn::{
+    conv::{Conv2d, Conv2dConfig},
+    PaddingConfig2d,
+};
 
 pub fn timestep_embedding<B: Backend>(
     timesteps: Tensor<B, 1, Int>,
@@ -79,11 +74,13 @@ impl UNetConfig {
 
         let time_embed_dim = self.model_channels * 4;
 
-        let lin1_time_embed = nn::LinearConfig::new(self.model_channels, time_embed_dim).init(device);
+        let lin1_time_embed =
+            nn::LinearConfig::new(self.model_channels, time_embed_dim).init(device);
         let silu_time_embed = SILU::new();
         let lin2_time_embed = nn::LinearConfig::new(time_embed_dim, time_embed_dim).init(device);
 
-        let lin1_label_embed = nn::LinearConfig::new(self.adm_in_channels, time_embed_dim).init(device);
+        let lin1_label_embed =
+            nn::LinearConfig::new(self.adm_in_channels, time_embed_dim).init(device);
         let silu_label_embed = SILU::new();
         let lin2_label_embed = nn::LinearConfig::new(time_embed_dim, time_embed_dim).init(device);
 
@@ -272,11 +269,13 @@ impl UNetConfig {
 
                 let r3 = if level != 0 {
                     UNetBlocks::ResU(
-                        ResUpsampleConfig::new(channels_in3, time_embed_dim, channels_out).init(device),
+                        ResUpsampleConfig::new(channels_in3, time_embed_dim, channels_out)
+                            .init(device),
                     )
                 } else {
                     UNetBlocks::Res(
-                        ResBlockConfig::new(channels_in3, time_embed_dim, channels_out).init(device),
+                        ResBlockConfig::new(channels_in3, time_embed_dim, channels_out)
+                            .init(device),
                     )
                 };
 
@@ -763,19 +762,23 @@ pub struct DownsampleConfig {
 }
 
 impl DownsampleConfig {
-    fn init<B: Backend>(&self, device: &B::Device) -> Conv2d<B> {
-        Conv2dConfig::new([self.n_channels, self.n_channels], [3, 3])
+    pub fn init<B: Backend>(&self, device: &B::Device) -> Downsample<B> {
+        let conv = Conv2dConfig::new([self.n_channels, self.n_channels], [3, 3])
             .with_stride([2, 2])
             .with_padding(PaddingConfig2d::Explicit(1, 1))
-            .init(device)
+            .init(device);
+        Downsample { conv }
     }
 }
 
-type Downsample<B> = Conv2d<B>;
+#[derive(Debug, Module)]
+pub struct Downsample<B: Backend> {
+    conv: Conv2d<B>,
+}
 
-impl<B: Backend> UNetBlock<B> for Conv2d<B> {
+impl<B: Backend> UNetBlock<B> for Downsample<B> {
     fn forward(&self, x: Tensor<B, 4>, emb: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 4> {
-        self.forward(x)
+        self.conv.forward(x)
     }
 }
 
@@ -854,10 +857,11 @@ pub struct TransformerBlockConfig {
 impl TransformerBlockConfig {
     fn init<B: Backend>(&self, device: &B::Device) -> TransformerBlock<B> {
         let norm1 = LayerNormConfig::new(self.n_state).init(device);
-        let attn1 = MultiHeadAttentionConfig::new(self.n_state, self.n_state, self.n_head).init(device);
+        let attn1 =
+            MultiHeadAttentionConfig::new(self.n_state, self.n_state, self.n_head).init(device);
         let norm2 = LayerNormConfig::new(self.n_state).init(device);
-        let attn2 =
-            MultiHeadAttentionConfig::new(self.n_state, self.n_context_state, self.n_head).init(device);
+        let attn2 = MultiHeadAttentionConfig::new(self.n_state, self.n_context_state, self.n_head)
+            .init(device);
         let norm3 = LayerNormConfig::new(self.n_state).init(device);
         let mlp = MLPConfig::new(self.n_state, 4).init(device);
 
@@ -927,7 +931,7 @@ pub struct GEGLUConfig {
 impl GEGLUConfig {
     fn init<B: Backend>(&self, device: &B::Device) -> GEGLU<B> {
         let proj = nn::LinearConfig::new(self.n_state_in, 2 * self.n_state_out).init(device);
-        let gelu = Gelu::new();
+        let gelu = nn::Gelu::new();
 
         GEGLU { proj, gelu }
     }
@@ -936,7 +940,7 @@ impl GEGLUConfig {
 #[derive(Module, Debug)]
 pub struct GEGLU<B: Backend> {
     proj: nn::Linear<B>,
-    gelu: Gelu,
+    gelu: nn::Gelu,
 }
 
 impl<B: Backend> GEGLU<B> {
@@ -1038,7 +1042,8 @@ impl ResBlockConfig {
             .init(device);
 
         let silu_embed = SILU::new();
-        let lin_embed = nn::LinearConfig::new(self.n_channels_embed, self.n_channels_out).init(device);
+        let lin_embed =
+            nn::LinearConfig::new(self.n_channels_embed, self.n_channels_out).init(device);
 
         let norm_out = GroupNormConfig::new(32, self.n_channels_out).init(device);
         let silu_out = SILU::new();
@@ -1108,5 +1113,11 @@ impl<B: Backend> ResBlock<B> {
 impl<B: Backend> UNetBlock<B> for ResBlock<B> {
     fn forward(&self, x: Tensor<B, 4>, emb: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 4> {
         self.forward(x, emb)
+    }
+}
+
+impl<B: Backend> UNetBlock<B> for Conv2d<B> {
+    fn forward(&self, x: Tensor<B, 4>, emb: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 4> {
+        self.forward(x)
     }
 }

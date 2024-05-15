@@ -1,31 +1,33 @@
-use super::GroupNorm;
-use crate::model::load::*;
+use std::path::Path;
 
-use std::error::Error;
+use super::*;
+use crate::prelude::*;
 
-use burn::{
-    config::Config,
-    module::{Module, Param},
-    nn,
-    tensor::{backend::Backend, Tensor},
-};
+use burn_import::pytorch::{config_from_file, LoadArgs, PyTorchFileRecorder};
 
 pub fn load_group_norm<B: Backend>(
-    path: &str,
+    path: &Path,
+    name: &str,
     device: &B::Device,
-) -> Result<GroupNorm<B>, Box<dyn Error>> {
-    let n_group = load_usize::<B>("n_group", path, device)?.into();
-    let n_channel = load_usize::<B>("n_channel", path, device)?.into();
-    let eps = load_f32::<B>("eps", path, device)?.into();
+) -> Result<GroupNorm<B>> {
+    
 
-    let gamma = Param::from_tensor(load_tensor::<B, 1>("weight", path, device)
-        .ok()
-        .unwrap_or_else(|| Tensor::ones([n_channel], device))
-    );
-    let beta = Param::from_tensor(load_tensor::<B, 1>("bias", path, device)
-        .ok()
-        .unwrap_or_else(|| Tensor::zeros([n_channel], device))
-    );
+    GroupNorm::load_file(self, file_path, recorder, device)
+
+    // let n_group = config_from_file::<B>(path, Some("n_group"), device)?.into();
+    // let n_channel = config_from_file::<B>(path, Some("n_channel"), device)?.into();
+    // let eps = config_from_file::<B>(path, Some("eps"), device)?.into();
+
+    // let gamma = Param::from_tensor(
+    //     config_from_file::<B>(path, Some("weight"), device)
+    //         .ok()
+    //         .unwrap_or_else(|| Tensor::ones([n_channel], device)),
+    // );
+    // let beta = Param::from_tensor(
+    //     config_from_file::<B>(path, Some("bias"), device)
+    //         .ok()
+    //         .unwrap_or_else(|| Tensor::zeros([n_channel], device)),
+    // );
 
     Ok(GroupNorm {
         n_group,

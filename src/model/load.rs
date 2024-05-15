@@ -1,92 +1,73 @@
-use npy::{self, NpyData};
+use crate::prelude::*;
+
+use burn::module::Param;
+use burn_ndarray::{NdArray, NdArrayDevice::Cpu as NdCpu};
+use ndarray_npy as npy;
 use num_traits::cast::ToPrimitive;
-use std::error::Error;
-use std::io::Read;
+use std::path::Path;
 
-use burn::{
-    config::Config,
-    module::{Module, Param},
-    nn::{self, conv},
-    tensor::{backend::Backend, Data, Tensor},
-};
+// pub fn numpy_to_tensor<B: Backend, const D: usize>(
+//     numpy_data: NpyData<f32>,
+//     device: &B::Device,
+// ) -> Tensor<B, D> {
+//     let v = numpy_data.to_vec();
 
-use burn::tensor::ElementConversion;
+//     let shape: Vec<_> = v[0..D].into_iter().map(|&v| v as usize).collect();
+//     let data: Vec<B::FloatElem> = v[D..].into_iter().map(|e| e.elem()).collect();
 
-pub fn numpy_to_tensor<B: Backend, const D: usize>(
-    numpy_data: NpyData<f32>,
-    device: &B::Device,
-) -> Tensor<B, D> {
-    let v = numpy_data.to_vec();
+//     Tensor::from_data(Data::new(data, shape.into()), device)
+// }
 
-    let shape: Vec<_> = v[0..D].into_iter().map(|&v| v as usize).collect();
-    let data: Vec<B::FloatElem> = v[D..].into_iter().map(|e| e.elem()).collect();
-
-    Tensor::from_data(Data::new(data, shape.into()), device)
-}
-
-pub fn load_tensor<B: Backend, const D: usize>(
-    name: &str,
-    path: &str,
-    device: &B::Device,
-) -> Result<Tensor<B, D>, Box<dyn Error>> {
-    let tensor_path = format!("{}/{}.npy", path, name);
-
-    let mut buf = vec![];
-    std::fs::File::open(&tensor_path)?.read_to_end(&mut buf)?;
-
-    let tensor_numpy: NpyData<f32> = NpyData::from_bytes(&buf)?;
-
-    let tensor = numpy_to_tensor(tensor_numpy, device);
-
-    println!("{}", tensor_path);
-
+pub fn load_tensor<E, const D: usize>(name: &str, path: &Path) -> Result<Tensor<NdArray, D>>
+where
+    E: npy::ReadableElement + Clone + Default,
+{
+    let np_tensor: ndarray::ArrayD<_> =
+        npy::read_npy(path).with_context(|| anyhow!("Reading {path:?}"))?;
+    let shape: [usize; D] = np_tensor.shape().try_into().unwrap();
+    let data = Data::new(np_tensor.into_raw_vec(), shape.into());
+    let tensor = Tensor::from_data(data, &NdCpu);
     Ok(tensor)
 }
 
-pub fn load_f32<B: Backend>(
-    name: &str,
-    path: &str,
-    device: &B::Device,
-) -> Result<f32, Box<dyn Error>> {
-    load_tensor::<B, 1>(name, path, device).map(|t| t.into_scalar().to_f32().unwrap())
+pub fn load_scalar(name: &str, path: &Path) -> Result<f32> {
+    load_tensor::<f32, 1>(name, path).and_then(|t| {
+        if t.shape().num_elements() == 1 {
+            Ok(t.into_scalar())
+        } else {
+            Err(anyhow!(
+                "Tensor '{name}' @ {path:?} has more than 1 element. Cannot load as a scalar"
+            ))
+        }
+    })
 }
 
-pub fn load_usize<B: Backend>(
-    name: &str,
-    path: &str,
-    device: &B::Device,
-) -> Result<usize, Box<dyn Error>> {
-    load_tensor::<B, 1>(name, path, device).map(|t| t.into_scalar().to_usize().unwrap())
+pub fn load_i64(name: &str, path: &Path) -> Result<i64> {
+    Ok(load_scalar(name, path)? as i64)
 }
 
-pub fn load_linear<B: Backend>(
-    path: &str,
-    device: &B::Device,
-) -> Result<nn::Linear<B>, Box<dyn Error>> {
-    let weight = load_tensor::<B, 2>("weight", path, device)?;
-    let bias = load_tensor::<B, 1>("bias", path, device).ok();
+pub fn load_linear(path: &Path) -> Result<nn::Linear<NdArray>> {
+    let weight = load_tensor::<f32, 2>("weight", path)?;
+    let bias = load_tensor::<f32, 1>("bias", path).ok();
 
-    let mut linear: nn::Linear<B> = nn::LinearConfig::new(3, 3).init(device);
+    let mut linear: nn::Linear<_> = nn::LinearConfig::new(3, 3).init(&NdCpu);
     linear.weight = Param::from_tensor(weight);
     linear.bias = bias.map(Param::from_tensor);
 
     Ok(linear)
 }
 
-pub fn load_embedding<B: Backend>(
-    path: &str,
-    device: &B::Device,
-) -> Result<nn::Embedding<B>, Box<dyn Error>> {
-    let weight = load_tensor::<B, 2>("weight", path, device)?;
+pub fn load_embedding(path: &Path) -> Result<nn::Embedding<NdArray>> {
+    let weight = load_tensor::<f32, 2>("weight", path)?;
     let [n_vocab, n_state] = weight.dims();
 
-    let mut embedding = nn::EmbeddingConfig::new(n_vocab, n_state).init(device);
+    let mut embedding = nn::EmbeddingConfig::new(n_vocab, n_state).init(&NdCpu);
     embedding.weight = Param::from_tensor(weight);
 
     Ok(embedding)
 }
 
-/*pub fn load_layer_norm<B: Backend>(path: &str, device: &B::Device) -> Result<nn::LayerNorm<B>, Box<dyn Error>> {
+/*pub fn load_layer_norm<B: Backend>(path: &str, device: &B::Device) -> Result<nn::LayerNorm<B>> {
     let weight = load_tensor::<B, 1>("weight", path, device)?;
     let bias = load_tensor::<B, 1>("bias", path, device)?;
     let eps = load_f32::<B>("eps", path, device)? as f64;
@@ -104,7 +85,7 @@ pub fn load_embedding<B: Backend>(
     Ok(layer_norm)
 }*/
 
-/*pub fn load_rmsnorm<B: Backend>(path: &str, device: &B::Device) -> Result<RMSNorm<B>, Box<dyn Error>> {
+/*pub fn load_rmsnorm<B: Backend>(path: &str, device: &B::Device) -> Result<RMSNorm<B>> {
     let weight = load_tensor::<B, 1>("weight", path, device)?;
     let eps = load_f32::<B>("eps", path, device)?.into();
 
@@ -116,10 +97,7 @@ pub fn load_embedding<B: Backend>(
     Ok(rmsnorm)
 }*/
 
-pub fn load_conv2d<B: Backend>(
-    path: &str,
-    device: &B::Device,
-) -> Result<conv::Conv2d<B>, Box<dyn Error>> {
+pub fn load_conv2d<B: Backend>(path: &str, device: &B::Device) -> Result<conv::Conv2d<B>> {
     let weight = load_tensor::<B, 4>("weight", path, device)?;
     let bias = load_tensor::<B, 1>("bias", path, device).ok();
     let has_bias = bias.is_some();
@@ -133,9 +111,9 @@ pub fn load_conv2d<B: Backend>(
     let dilation = load_tensor::<B, 1>("dilation", path, device)?;
     let dilation = tensor_to_array_2(dilation);
 
-    let n_group = load_usize::<B>("n_group", path, device)?.into();
-    let n_channels_in = load_usize::<B>("n_channels_in", path, device)?.into();
-    let n_channels_out = load_usize::<B>("n_channels_out", path, device)?.into();
+    let n_group = load_i64::<B>("n_group", path, device)?.into();
+    let n_channels_in = load_i64::<B>("n_channels_in", path, device)?.into();
+    let n_channels_out = load_i64::<B>("n_channels_out", path, device)?.into();
 
     let padding = load_tensor::<B, 1>("padding", path, device)?;
     let padding = tensor_to_array_2(padding);

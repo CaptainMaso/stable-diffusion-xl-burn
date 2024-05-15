@@ -241,7 +241,7 @@ mod tests {
         let target_encode = [3306, 1002, 256, 49406, 587, 10468, 49406];
         let target_decode = "hello world ! <|startoftext|>asdf <|startoftext|>"; // extra spaces sometimes
 
-        let encoded = tokenizer.encode(&text);
+        let encoded = tokenizer.encode(&text, false, false);
         assert_eq!(&target_encode[..], &encoded[..]);
         let decoded = tokenizer.decode(&encoded[..]);
         assert_eq!(target_decode, decoded);

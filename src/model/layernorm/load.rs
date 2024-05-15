@@ -14,7 +14,7 @@ pub fn load_layer_norm<B: Backend>(
     path: &str,
     device: &B::Device,
 ) -> Result<LayerNorm<B>, Box<dyn Error>> {
-    let eps = load_f32::<B>("eps", path, device)?.into();
+    let eps = load_scalar::<B>("eps", path, device)?.into();
 
     let gamma = Param::from_tensor(load_tensor::<B, 1>("weight", path, device)?);
     let beta = Param::from_tensor(load_tensor::<B, 1>("bias", path, device)?);

@@ -2,11 +2,11 @@ use std::env;
 use std::error::Error;
 use std::process;
 
-use stablediffusion::model::autoencoder::{load::load_decoder, Decoder, DecoderConfig};
-use stablediffusion::model::autoencoder::{load::load_encoder, Encoder, EncoderConfig};
-use stablediffusion::model::clip::{load::load_clip_text_transformer, CLIPConfig, CLIP};
-use stablediffusion::model::stablediffusion::{load::*, Diffuser, Embedder, LatentDecoder};
-use stablediffusion::model::unet::{load::load_unet, UNet, UNetConfig};
+use stablediffusion::model::autoencoder::{Decoder, DecoderConfig};
+use stablediffusion::model::autoencoder::{Encoder, EncoderConfig};
+use stablediffusion::model::clip::{CLIPConfig, CLIP};
+use stablediffusion::model::stablediffusion::{Diffuser, Embedder, LatentDecoder};
+use stablediffusion::model::unet::{UNet, UNetConfig};
 
 use burn::{
     config::Config,
@@ -17,7 +17,7 @@ use burn::{
 
 use burn_tch::{LibTorch, LibTorchDevice};
 
-use burn::record::{self, NamedMpkFileRecorder, HalfPrecisionSettings, Recorder};
+use burn::record::{self, HalfPrecisionSettings, NamedMpkFileRecorder, Recorder};
 
 fn convert_embedder_dump_to_model<B: Backend>(
     dump_path: &str,

@@ -1,20 +1,19 @@
-pub mod load;
+// #[cfg(feature = "load")]
+// pub mod load;
+
+use crate::prelude::*;
 
 use crate::model::layernorm::{LayerNorm, LayerNormConfig};
 
 use burn::{
-    config::Config,
-    module::{Module, Param},
-    nn,
+    module::Param,
     tensor::{
         activation::{sigmoid, softmax},
-        backend::Backend,
-        module::embedding,
-        Distribution, Int, Tensor,
+        Distribution, Int,
     },
 };
 
-use crate::backend::Backend as MyBackend;
+use crate::backend::QKVBackend as MyBackend;
 
 #[derive(Config, Debug)]
 pub struct CLIPConfig {
@@ -30,8 +29,11 @@ pub struct CLIPConfig {
 impl CLIPConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> CLIP<B> {
         let token_embedding = nn::EmbeddingConfig::new(self.n_vocab, self.n_state).init(device);
-        let position_embedding =
-            Param::from_tensor(Tensor::random([self.n_ctx, self.n_state], Distribution::Normal(0.0, 1.0), device));
+        let position_embedding = Param::from_tensor(Tensor::random(
+            [self.n_ctx, self.n_state],
+            Distribution::Normal(0.0, 1.0),
+            device,
+        ));
         let blocks = (0..self.n_layer)
             .into_iter()
             .map(|_| {
@@ -40,14 +42,11 @@ impl CLIPConfig {
             })
             .collect();
         let layer_norm = LayerNormConfig::new(self.n_state).init(device);
-        let text_projection = Some(
-            Param::from_tensor(Tensor::random(
-                [self.n_state, self.embed_dim],
-                Distribution::Normal(0.0, 1.0),
-                device
-                )
-            ),
-        );
+        let text_projection = Some(Param::from_tensor(Tensor::random(
+            [self.n_state, self.embed_dim],
+            Distribution::Normal(0.0, 1.0),
+            device,
+        )));
 
         CLIP {
             token_embedding,

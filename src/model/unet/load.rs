@@ -1,23 +1,13 @@
 use super::GroupNorm;
-use crate::model::load::*;
+//use crate::model::load::*;
 
-use std::error::Error;
-
-use burn::{
-    config::Config,
-    module::{Module, Param},
-    nn,
-    tensor::{backend::Backend, Tensor},
-};
+use burn_import::*;
 
 use super::*;
 use crate::model::groupnorm::load::load_group_norm;
 use crate::model::layernorm::load::load_layer_norm;
 
-pub fn load_res_block<B: Backend>(
-    path: &str,
-    device: &B::Device,
-) -> Result<ResBlock<B>, Box<dyn Error>> {
+pub fn load_res_block<B: Backend>(path: &str, device: &B::Device) -> Result<ResBlock<B>> {
     let norm_in = load_group_norm::<B>(&format!("{}/{}", path, "norm_in"), device)?;
     let conv_in = load_conv2d::<B>(&format!("{}/{}", path, "conv_in"), device)?;
     let lin_embed = load_linear::<B>(&format!("{}/{}", path, "lin_embed"), device)?;
@@ -44,7 +34,7 @@ pub fn load_multi_head_attention<B: Backend>(
     path: &str,
     device: &B::Device,
 ) -> Result<MultiHeadAttention<B>, Box<dyn Error>> {
-    let n_head = load_usize::<B>("n_head", path, device)?;
+    let n_head = load_i64::<B>("n_head", path, device)?;
     let query = load_linear::<B>(&format!("{}/{}", path, "query"), device)?;
     let key = load_linear::<B>(&format!("{}/{}", path, "key"), device)?;
     let value = load_linear::<B>(&format!("{}/{}", path, "value"), device)?;
@@ -115,7 +105,7 @@ pub fn load_spatial_transformer<B: Backend>(
     //let proj_in = load_conv2d::<B>(&format!("{}/{}", path, "proj_in"), device)?;
     let proj_in = load_linear::<B>(&format!("{}/{}", path, "proj_in"), device)?;
 
-    let n_blocks = load_usize::<B>("n_blocks", path, device)?;
+    let n_blocks = load_i64::<B>("n_blocks", path, device)?;
     let blocks = (0..n_blocks)
         .into_iter()
         .map(|i| load_transformer_block::<B>(&format!("{}/transformer_{}", path, i), device))
@@ -287,7 +277,7 @@ pub fn load_unet_blocks<B: Backend>(
     path: &str,
     device: &B::Device,
 ) -> Result<Vec<UNetBlocks<B>>, Box<dyn Error>> {
-    let n_blocks = load_usize::<B>("n_blocks", path, device)?;
+    let n_blocks = load_i64::<B>("n_blocks", path, device)?;
     (0..n_blocks)
         .into_iter()
         .map(|i| {
@@ -366,7 +356,7 @@ pub fn load_unet_output_blocks<B: Backend>(
 }*/
 
 pub fn load_unet<B: Backend>(path: &str, device: &B::Device) -> Result<UNet<B>, Box<dyn Error>> {
-    let model_channels = load_usize::<B>("model_channels", path, device)?;
+    let model_channels = load_i64::<B>("model_channels", path, device)?;
     let lin1_time_embed = load_linear::<B>(&format!("{}/{}", path, "lin1_time_embed"), device)?;
     let silu_time_embed = SILU::new(); // Assuming SILU::new() initializes a new SILU struct
     let lin2_time_embed = load_linear::<B>(&format!("{}/{}", path, "lin2_time_embed"), device)?;
